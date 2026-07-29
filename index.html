@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="uz" data-lang="uz">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ECG Intelligence — Clinical AI Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,500;0,600;0,700;0,800;1,600;1,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+  :root{
+    /* ── instrument shell (dark) ── */
+    --ink:       #0a1210;
+    --ink-2:     #0e1a16;
+    --panel:     #12211c;
+    --panel-2:   #17281f;
+    --panel-3:   #1c3026;
+    --border:    rgba(233,244,238,.09);
+    --border-2:  rgba(233,244,238,.16);
+
+    /* ── chart paper (the signature) ── */
+    --paper:      #f3ecdd;
+    --paper-ink:  #2a2018;
+    --grid-fine:  rgba(191,102,88,.28);
+    --grid-bold:  rgba(191,102,88,.52);
+
+    /* ── accents ── */
+    --trace:      #3ecf8e;
+    --trace-l:    #7ce6b3;
+    --red:        #e2635f;
+    --amber:      #eba94e;
+    --blue:       #7fa3e0;
+
+    /* ── text on ink ── */
+    --white:  #eef4f0;
+    --text:   rgba(238,244,240,.92);
+    --muted:  rgba(238,244,240,.54);
+    --muted-2:rgba(238,244,240,.30);
+
+    /* ── type ── */
+    --f-display:'Archivo', -apple-system, sans-serif;
+    --f-sans:   'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --f-mono:   'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--ink);
+    color:var(--text);
+    font-family:var(--f-sans);
+    font-size:16px;
+    line-height:1.6;
+    min-height:100vh;
+    overflow-x:hidden;
+  }
+
+  /* faint instrument-grid wash + glows across the whole page */
+  body::before{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(233,244,238,.025) 0, rgba(233,244,238,.025) 1px, transparent 1px, transparent 32px),
+      repeating-linear-gradient(90deg, rgba(233,244,238,.025) 0, rgba(233,244,238,.025) 1px, transparent 1px, transparent 32px);
+    -webkit-mask-image:radial-gradient(ellipse 80% 60% at 50% 0%, #000 0%, transparent 75%);
+            mask-image:radial-gradient(ellipse 80% 60% at 50% 0%, #000 0%, transparent 75%);
+  }
+  body::after{
+    content:'';position:fixed;pointer-events:none;z-index:0;
+    top:-220px;right:-180px;width:620px;height:620px;
+    background:radial-gradient(circle, rgba(62,207,142,.10) 0%, transparent 70%);
+  }
+  .glow-2{position:fixed;pointer-events:none;z-index:0;bottom:-200px;left:-160px;width:560px;height:560px;
+    background:radial-gradient(circle, rgba(191,102,88,.09) 0%, transparent 70%);}
+
+  a{color:inherit}
+  button{font:inherit}
+  :focus-visible{outline:2px solid var(--trace);outline-offset:3px;border-radius:4px;}
+
+  /* ── NAV ── */
+  nav{
+    position:sticky;top:0;z-index:200;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:16px 28px;
+    background:rgba(10,18,16,0.82);
+    backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+    border-bottom:1px solid var(--border);
+  }
+  .nav-brand{display:flex;align-items:center;gap:10px;}
+  .brand-mark{
+    width:32px;height:32px;border-radius:9px;flex-shrink:0;
+    background:var(--panel-3);border:1px solid var(--border-2);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--trace);
+  }
+  .brand-mark svg{width:19px;height:19px;}
+  .brand-text{
+    font-family:var(--f-sans);font-weight:700;font-size:1rem;
+    color:var(--white);line-height:1.15;letter-spacing:-.2px;
+  }
+  .brand-text small{display:block;color:var(--muted);font-weight:500;font-size:.66rem;letter-spacing:1.2px;text-transform:uppercase;font-family:var(--f-mono);margin-top:2px;}
+  .nav-links{display:flex;align-items:center;gap:4px;}
+  .nav-links a{
+    color:var(--muted);text-decoration:none;
+    font-size:.83rem;font-weight:500;
+    padding:8px 14px;border-radius:7px;
+    transition:all .2s;
+  }
+  .nav-links a:hover{color:var(--white);background:rgba(233,244,238,.06);}
+  .lang-group{
+    display:flex;border:1px solid var(--border-2);border-radius:7px;
+    overflow:hidden;margin-left:6px;
+  }
+  .lang-btn{
+    background:none;border:none;color:var(--muted);font-family:var(--f-mono);
+    font-size:.7rem;font-weight:600;padding:7px 11px;cursor:pointer;
+    transition:all .2s;letter-spacing:1px;
+  }
+  .lang-btn.active,.lang-btn:hover{background:rgba(62,207,142,.16);color:var(--trace-l);}
+  .lang-btn+.lang-btn{border-left:1px solid var(--border-2);}
+
+  /* ── HERO ── */
+  .hero{
+    position:relative;z-index:1;
+    padding:76px 28px 210px;
+    max-width:700px;
+  }
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    font-family:var(--f-mono);font-size:.68rem;font-weight:600;
+    letter-spacing:2px;text-transform:uppercase;color:var(--trace-l);
+    margin-bottom:22px;opacity:0;animation:riseUp .7s .05s forwards;
+  }
+  .eyebrow::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--trace);box-shadow:0 0 8px var(--trace);}
+  .hero h1{
+    font-family:var(--f-display);font-weight:800;
+    font-size:clamp(2.3rem,6.8vw,3.4rem);
+    line-height:1.06;letter-spacing:-1.3px;color:var(--white);
+    margin-bottom:22px;max-width:610px;
+    opacity:0;animation:riseUp .7s .15s forwards;
+  }
+  .hero h1 em{font-style:italic;font-weight:700;color:var(--trace-l);}
+  .hero p{
+    font-size:1.02rem;color:var(--muted);max-width:430px;
+    line-height:1.7;margin-bottom:36px;
+    opacity:0;animation:riseUp .7s .25s forwards;
+  }
+  .hero-btns{display:flex;gap:12px;flex-wrap:wrap;opacity:0;animation:riseUp .7s .35s forwards;}
+  .btn-primary{
+    background:var(--trace);color:#08140f;font-family:var(--f-sans);font-weight:700;
+    font-size:.9rem;padding:14px 26px;border-radius:10px;
+    border:none;cursor:pointer;text-decoration:none;display:inline-block;
+    transition:all .25s;box-shadow:0 4px 22px rgba(62,207,142,.28);
+  }
+  .btn-primary:hover{background:var(--trace-l);transform:translateY(-2px);box-shadow:0 8px 28px rgba(62,207,142,.4);}
+  .btn-sec{
+    background:rgba(233,244,238,.06);color:var(--text);font-family:var(--f-sans);font-weight:600;
+    font-size:.9rem;padding:14px 26px;border-radius:10px;
+    border:1px solid var(--border-2);cursor:pointer;text-decoration:none;display:inline-block;
+    transition:all .25s;
+  }
+  .btn-sec:hover{background:rgba(233,244,238,.11);transform:translateY(-2px);}
+
+  /* hero waveform, sitting low across the full width */
+  .hero-trace-wrap{
+    position:absolute;left:0;right:0;bottom:0;height:180px;
+    overflow:hidden;z-index:0;
+    -webkit-mask-image:linear-gradient(to top, #000 40%, transparent 96%);
+            mask-image:linear-gradient(to top, #000 40%, transparent 96%);
+  }
+  .hero-trace{width:200%;height:100%;display:block;animation:traceScroll 8s linear infinite;
+    filter:drop-shadow(0 0 10px rgba(62,207,142,.45));}
+  @keyframes traceScroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+  /* ── WORKSPACE ── */
+  .workspace-section{position:relative;z-index:1;padding:0 20px 60px;opacity:0;animation:riseUp .7s .4s forwards;}
+  .workspace-card{
+    background:var(--panel);border:1px solid var(--border);border-radius:18px;
+    overflow:hidden;max-width:700px;margin:0 auto;
+  }
+  .ws-header{
+    padding:16px 22px;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .ws-title{font-family:var(--f-mono);font-weight:600;font-size:.76rem;color:var(--muted);letter-spacing:1px;text-transform:uppercase;}
+  .ws-dot{width:7px;height:7px;border-radius:50%;background:var(--trace);box-shadow:0 0 8px var(--trace);animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* compact intro trace strip */
+  .ecg-canvas-wrap{padding:22px 22px 18px;background:var(--ink-2);}
+  .ecg-svg-wrap{width:100%;height:76px;overflow:hidden;position:relative;}
+  .ws-trace{width:200%;height:100%;display:block;animation:traceScroll 2.6s linear infinite;}
+
+  /* upload zone */
+  .upload-zone{
+    margin:20px 22px;border:1.5px dashed rgba(191,102,88,.4);border-radius:13px;
+    padding:30px 20px;text-align:center;cursor:pointer;position:relative;
+    transition:all .3s;background:rgba(191,102,88,.04);
+  }
+  .upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;}
+  .upload-zone:hover{border-color:var(--trace);background:rgba(62,207,142,.05);}
+  .upload-zone.drag-over{border-color:var(--trace);background:rgba(62,207,142,.08);}
+  .upload-icon{
+    width:38px;height:38px;margin:0 auto 12px;border-radius:10px;
+    background:rgba(233,244,238,.06);display:flex;align-items:center;justify-content:center;color:var(--muted);
+  }
+  .upload-icon svg{width:19px;height:19px;}
+  .upload-label{font-size:.83rem;color:var(--muted);line-height:1.6;}
+  .upload-label strong{color:var(--trace-l);font-weight:600;}
+  .upload-label .fmt{font-family:var(--f-mono);font-size:.68rem;color:var(--muted-2);letter-spacing:.5px;}
+
+  /* preview — the paper chart moment */
+  #preview-wrap{margin:0 22px 0;display:none;}
+  .chart-frame{
+    position:relative;padding:14px;border-radius:12px;
+    background-color:var(--paper);
+    background-image:
+      repeating-linear-gradient(0deg, var(--grid-fine) 0 1px, transparent 1px 6px),
+      repeating-linear-gradient(90deg, var(--grid-fine) 0 1px, transparent 1px 6px),
+      repeating-linear-gradient(0deg, var(--grid-bold) 0 1.5px, transparent 1.5px 30px),
+      repeating-linear-gradient(90deg, var(--grid-bold) 0 1.5px, transparent 1.5px 30px);
+    box-shadow:0 8px 26px rgba(0,0,0,.35);
+    margin-bottom:16px;
+  }
+  .chart-frame .corner{position:absolute;width:13px;height:13px;border-color:rgba(139,58,46,.55);opacity:.9;}
+  .chart-frame .corner.tl{top:6px;left:6px;border-top:2px solid;border-left:2px solid;border-radius:3px 0 0 0;}
+  .chart-frame .corner.tr{top:6px;right:6px;border-top:2px solid;border-right:2px solid;border-radius:0 3px 0 0;}
+  .chart-frame .corner.bl{bottom:6px;left:6px;border-bottom:2px solid;border-left:2px solid;border-radius:0 0 0 3px;}
+  .chart-frame .corner.br{bottom:6px;right:6px;border-bottom:2px solid;border-right:2px solid;border-radius:0 0 3px 0;}
+  #preview-wrap img{
+    width:100%;max-height:220px;object-fit:contain;border-radius:5px;
+    display:block;position:relative;
+  }
+
+  .btn-analyze{
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    width:calc(100% - 44px);margin:16px 22px 22px;padding:15px;
+    background:var(--trace);color:#08140f;font-family:var(--f-sans);
+    font-weight:700;font-size:.86rem;letter-spacing:.3px;
+    border:none;border-radius:11px;cursor:pointer;
+    transition:all .25s;box-shadow:0 4px 20px rgba(62,207,142,.25);
+  }
+  .btn-analyze:hover:not(:disabled){background:var(--trace-l);transform:translateY(-1px);}
+  .btn-analyze:disabled{opacity:.32;cursor:not-allowed;transform:none;}
+
+  .loading-bar{
+    height:3px;background:linear-gradient(90deg,var(--trace),var(--blue),var(--trace));
+    background-size:200%;margin:0 22px 8px;border-radius:2px;
+    display:none;animation:shimmer 1.2s linear infinite;
+  }
+  @keyframes shimmer{from{background-position:0%}to{background-position:200%}}
+
+  /* ── RESULTS ── */
+  #results{margin:0 22px 22px;display:none;}
+  .rhythm-card{
+    border-radius:11px;padding:17px 19px;margin-bottom:12px;
+    display:flex;align-items:flex-start;gap:15px;animation:riseUp .4s forwards;
+  }
+  .rhythm-card.normal{background:rgba(62,207,142,.10);border:1px solid rgba(62,207,142,.28);}
+  .rhythm-card.brady {background:rgba(127,163,224,.10);border:1px solid rgba(127,163,224,.30);}
+  .rhythm-card.tachy {background:rgba(226,99,95,.10); border:1px solid rgba(226,99,95,.30);}
+  .rhythm-card.warn  {background:rgba(235,169,78,.10);border:1px solid rgba(235,169,78,.30);}
+  .rhythm-card.unknown{background:rgba(233,244,238,.04);border:1px solid var(--border);}
+  .rc-icon{font-size:1.7rem;flex-shrink:0;margin-top:1px;}
+  .rc-title{font-family:var(--f-sans);font-weight:700;font-size:1rem;margin-bottom:4px;color:var(--white);}
+  .rc-desc{font-size:.79rem;color:var(--muted);line-height:1.6;}
+
+  .stats-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+  .stat-box{background:var(--ink-2);border:1px solid var(--border);border-radius:11px;padding:14px 16px;}
+  .stat-label{font-family:var(--f-mono);font-size:.66rem;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;}
+  .stat-val{font-family:var(--f-mono);font-size:1.5rem;font-weight:700;}
+  .stat-val.green{color:var(--trace);}
+  .stat-val.blue{color:var(--blue);}
+  .stat-val.red{color:var(--red);}
+  .stat-val.amber{color:var(--amber);}
+
+  .raw-card{
+    background:var(--ink-2);border:1px solid var(--border);border-radius:11px;
+    padding:15px 17px;font-family:var(--f-mono);font-size:.73rem;color:var(--muted);
+    line-height:1.8;white-space:pre-wrap;
+  }
+  .raw-card strong{color:var(--text);}
+
+  .err-card{
+    background:rgba(226,99,95,.08);border:1px solid rgba(226,99,95,.3);border-radius:11px;
+    padding:15px 17px;font-size:.8rem;color:var(--red);line-height:1.6;display:none;
+  }
+
+  /* ── PLATFORM / FEATURES ── */
+  .platform{position:relative;z-index:1;padding:24px 20px 64px;max-width:760px;margin:0 auto;}
+  .section-label{
+    font-family:var(--f-mono);font-size:.68rem;letter-spacing:2px;text-transform:uppercase;
+    color:var(--trace-l);margin-bottom:8px;font-weight:600;
+  }
+  .section-title{
+    font-family:var(--f-display);font-size:1.7rem;font-weight:800;
+    letter-spacing:-.6px;margin-bottom:30px;color:var(--white);
+  }
+  .feat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:1px;
+    background:var(--border);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
+  .feat-card{background:var(--panel);padding:26px 22px;transition:all .25s;position:relative;}
+  .feat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--trace);
+    transform:scaleX(0);transform-origin:left;transition:transform .3s;}
+  .feat-card:hover{background:var(--panel-2);}
+  .feat-card:hover::before{transform:scaleX(1);}
+  .feat-icon{width:36px;height:36px;border-radius:9px;background:rgba(62,207,142,.13);
+    display:flex;align-items:center;justify-content:center;color:var(--trace-l);margin-bottom:16px;}
+  .feat-icon svg{width:18px;height:18px;}
+  .feat-title{font-family:var(--f-sans);font-weight:700;font-size:.92rem;margin-bottom:7px;color:var(--white);}
+  .feat-desc{font-size:.79rem;color:var(--muted);line-height:1.7;}
+
+  /* ── TEAM / CONTACT ── */
+  .contact-section{position:relative;z-index:1;padding:0 20px 84px;max-width:760px;margin:0 auto;}
+  .team-card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:8px 28px;}
+  .team-member{display:flex;align-items:center;gap:16px;padding:18px 0;border-bottom:1px solid var(--border);}
+  .team-member:last-child{border-bottom:none;}
+  .avatar{
+    width:44px;height:44px;border-radius:11px;flex-shrink:0;
+    background:var(--panel-3);border:1px solid var(--border-2);
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--f-mono);font-weight:700;font-size:.82rem;color:var(--trace-l);
+  }
+  .member-name{font-family:var(--f-sans);font-weight:700;font-size:.95rem;margin-bottom:3px;color:var(--white);}
+  .member-info{font-family:var(--f-mono);font-size:.76rem;color:var(--muted);}
+  .contact-note{margin-top:18px;font-size:.78rem;color:var(--muted);line-height:1.75;}
+
+  footer{
+    text-align:center;padding:26px 20px;border-top:1px solid var(--border);
+    font-family:var(--f-mono);font-size:.7rem;color:var(--muted-2);letter-spacing:.3px;
+    position:relative;z-index:1;
+  }
+
+  @keyframes riseUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+
+  @media(prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important;scroll-behavior:auto !important;}
+    .hero h1,.hero p,.hero-btns,.hero .eyebrow,.workspace-section{opacity:1;}
+  }
+
+  @media(max-width:640px){
+    nav{padding:13px 16px;}
+    .nav-links a{display:none;}
+    .hero{padding:52px 18px 150px;}
+    .hero p{max-width:100%;}
+    .workspace-section{padding:0 12px 40px;}
+    .platform,.contact-section{padding-left:14px;padding-right:14px;}
+    .team-card{padding:4px 18px;}
+    .hero-trace-wrap{height:120px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="glow-2"></div>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-brand">
+    <span class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,12 6,12 8,6 11,18 13,9 15,15 16,12 23,12"/></svg>
+    </span>
+    <span class="brand-text">ECG Intelligence<small>Clinical AI Platform</small></span>
+  </div>
+  <div class="nav-links">
+    <a href="#platform" data-uz="Platform" data-en="Platform">Platform</a>
+    <a href="#contact" data-uz="Aloqa" data-en="Contact">Aloqa</a>
+    <div class="lang-group">
+      <button class="lang-btn active" onclick="setLang('uz')">UZ</button>
+      <button class="lang-btn" onclick="setLang('en')">EN</button>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="eyebrow" data-uz="Klinik Qaror Qo'llab-quvvatlash Tizimi" data-en="Clinical Decision Support System">Klinik Qaror Qo'llab-quvvatlash Tizimi</div>
+  <h1 data-uz="EKG rasmini yuklang — <em>sun'iy intellekt</em> qolganini o'qiydi" data-en="Upload the ECG image — <em>AI</em> reads the rest">
+    EKG rasmini yuklang — <em>sun'iy intellekt</em> qolganini o'qiydi
+  </h1>
+  <p data-uz="Signal sifatini tekshiradi, ritmni klassifikatsiya qiladi va o'tkazuvchanlik hamda ST segment o'zgarishlarini klinik aniqlik bilan aniqlaydi." data-en="Checks signal quality, classifies rhythm, and flags conduction or ST-segment changes with clinical precision.">
+    Signal sifatini tekshiradi, ritmni klassifikatsiya qiladi va o'tkazuvchanlik hamda ST segment o'zgarishlarini klinik aniqlik bilan aniqlaydi.
+  </p>
+  <div class="hero-btns">
+    <a href="#workspace" class="btn-primary" data-uz="Tahlil boshlash" data-en="Start Analysis">Tahlil boshlash</a>
+    <a href="#contact" class="btn-sec" data-uz="Aloqa" data-en="Contact">Aloqa</a>
+  </div>
+
+  <div class="hero-trace-wrap">
+    <svg class="hero-trace" viewBox="0 0 2400 180" preserveAspectRatio="none">
+      <defs>
+        <path id="beatH" d="M0,100 L40,100 Q55,76 70,100 L85,100 L91,109 L98,20 L105,112 L112,100 L138,100 Q162,62 188,100 L240,100"/>
+        <linearGradient id="fadeHero" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#3ecf8e" stop-opacity="0"/>
+          <stop offset="6%" stop-color="#3ecf8e" stop-opacity=".85"/>
+          <stop offset="94%" stop-color="#3ecf8e" stop-opacity=".85"/>
+          <stop offset="100%" stop-color="#3ecf8e" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <g stroke="url(#fadeHero)" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <use href="#beatH" x="0"/><use href="#beatH" x="240"/><use href="#beatH" x="480"/><use href="#beatH" x="720"/><use href="#beatH" x="960"/>
+        <use href="#beatH" x="1200"/><use href="#beatH" x="1440"/><use href="#beatH" x="1680"/><use href="#beatH" x="1920"/><use href="#beatH" x="2160"/>
+      </g>
+    </svg>
+  </div>
+</div>
+
+<!-- WORKSPACE -->
+<div class="workspace-section" id="workspace">
+  <div class="workspace-card">
+    <div class="ws-header">
+      <span class="ws-title" data-uz="EKG Yuklash Maydoni" data-en="ECG Upload Workspace">EKG Yuklash Maydoni</span>
+      <div class="ws-dot"></div>
+    </div>
+
+    <div class="ecg-canvas-wrap">
+      <div class="ecg-svg-wrap">
+        <svg class="ws-trace" viewBox="0 0 1200 90" preserveAspectRatio="none">
+          <defs>
+            <path id="beatWS" d="M0,50 L20,50 Q27,38 35,50 L42,50 L45,54 L49,10 L52,56 L56,50 L69,50 Q81,31 94,50 L120,50"/>
+            <linearGradient id="fadeWS" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#3ecf8e" stop-opacity="0"/>
+              <stop offset="8%" stop-color="#3ecf8e" stop-opacity="1"/>
+              <stop offset="92%" stop-color="#3ecf8e" stop-opacity="1"/>
+              <stop offset="100%" stop-color="#3ecf8e" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <g stroke="url(#fadeWS)" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <use href="#beatWS" x="0"/><use href="#beatWS" x="120"/><use href="#beatWS" x="240"/><use href="#beatWS" x="360"/><use href="#beatWS" x="480"/>
+            <use href="#beatWS" x="600"/><use href="#beatWS" x="720"/><use href="#beatWS" x="840"/><use href="#beatWS" x="960"/><use href="#beatWS" x="1080"/>
+          </g>
+        </svg>
+      </div>
+    </div>
+
+    <div class="upload-zone" id="dropZone">
+      <input type="file" id="ecgFile" accept="image/png,image/jpg,image/jpeg"/>
+      <span class="upload-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15 V4 M12 4 L7.5 8.5 M12 4 L16.5 8.5"/><path d="M4 16 V18.5 C4 19.6 4.9 20.5 6 20.5 H18 C19.1 20.5 20 19.6 20 18.5 V16"/></svg>
+      </span>
+      <p class="upload-label" data-uz="Rasmni shu yerga tashlang yoki <strong>tanlang</strong><br><span class='fmt'>PNG · JPG · JPEG</span>" data-en="Drop image here or <strong>browse</strong><br><span class='fmt'>PNG · JPG · JPEG</span>">
+        Rasmni shu yerga tashlang yoki <strong>tanlang</strong><br>
+        <span class="fmt">PNG · JPG · JPEG</span>
+      </p>
+    </div>
+
+    <div id="preview-wrap">
+      <div class="chart-frame">
+        <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+        <img id="preview-img" src="" alt="ECG"/>
+      </div>
+    </div>
+
+    <button class="btn-analyze" id="analyzeBtn" disabled
+      data-uz="EKGni Tahlil Qilish →" data-en="Analyze ECG →">
+      EKGni Tahlil Qilish →
+    </button>
+    <div class="loading-bar" id="loadingBar"></div>
+
+    <div id="results">
+      <div id="rhythmCard" class="rhythm-card" style="display:none">
+        <div class="rc-icon" id="rcIcon"></div>
+        <div>
+          <div class="rc-title" id="rcTitle"></div>
+          <div class="rc-desc" id="rcDesc"></div>
+        </div>
+      </div>
+      <div class="stats-row" id="statsRow" style="display:none">
+        <div class="stat-box">
+          <div class="stat-label" data-uz="Yurak tezligi" data-en="Heart Rate">Yurak tezligi</div>
+          <div class="stat-val" id="statBPM">—</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label" data-uz="Ritm" data-en="Rhythm">Ritm</div>
+          <div class="stat-val" id="statRhythm" style="font-size:1rem;padding-top:4px;">—</div>
+        </div>
+      </div>
+      <div class="raw-card" id="rawCard" style="display:none"></div>
+      <div class="err-card" id="errCard"></div>
+    </div>
+  </div>
+</div>
+
+<!-- PLATFORM -->
+<section id="platform" class="platform">
+  <p class="section-label" data-uz="Imkoniyatlar" data-en="Features">Imkoniyatlar</p>
+  <h2 class="section-title" data-uz="Platform xususiyatlari" data-en="Platform Features">Platform xususiyatlari</h2>
+  <div class="feat-grid">
+    <div class="feat-card">
+      <div class="feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,12 6,12 8,6 11,18 13,9 15,15 16,12 23,12"/></svg></div>
+      <div class="feat-title" data-uz="Signal qayta ishlash" data-en="Signal Processing">Signal qayta ishlash</div>
+      <div class="feat-desc" data-uz="Ilg'or ECG preprocessing va to'lqin chiqarish." data-en="Advanced ECG preprocessing and waveform extraction.">Ilg'or ECG preprocessing va to'lqin chiqarish.</div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><line x1="12" y1="7" x2="6.3" y2="16.3"/><line x1="12" y1="7" x2="17.7" y2="16.3"/><line x1="7" y1="18" x2="17" y2="18"/></svg></div>
+      <div class="feat-title" data-uz="AI Ritm tahlili" data-en="AI Rhythm Analysis">AI Ritm tahlili</div>
+      <div class="feat-desc" data-uz="Sinus ritm, bradikardiya va taxikardiyani aniqlash." data-en="Detect sinus rhythm, bradycardia and tachycardia.">Sinus ritm, bradikardiya va taxikardiyani aniqlash.</div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.5 C6.5 15.8 3 11.9 3 8 C3 5.2 5.2 3 8 3 C9.8 3 11.2 3.9 12 5.3 C12.8 3.9 14.2 3 16 3 C18.8 3 21 5.2 21 8 C21 11.9 17.5 15.8 12 20.5 Z"/><polyline points="6,11 9.5,11 11,8 13,14.5 14.5,11 18,11"/></svg></div>
+      <div class="feat-title" data-uz="Yurak tezligi" data-en="Heart Rate">Yurak tezligi</div>
+      <div class="feat-desc" data-uz="Avtomatik R-peak aniqlash va BPM hisoblash." data-en="Automatic R-peak detection and BPM calculation.">Avtomatik R-peak aniqlash va BPM hisoblash.</div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 L20 6.2 V11 C20 16 16.5 19.6 12 21 C7.5 19.6 4 16 4 11 V6.2 Z"/><polyline points="8.3,12 10.8,14.5 15.7,9.2"/></svg></div>
+      <div class="feat-title" data-uz="Signal validatsiya" data-en="Signal Validation">Signal validatsiya</div>
+      <div class="feat-desc" data-uz="ECG sifatini tekshirish va artefaktlarni filtrlash." data-en="ECG quality verification and artifact filtering.">ECG sifatini tekshirish va artefaktlarni filtrlash.</div>
+    </div>
+  </div>
+</section>
+
+<!-- CONTACT -->
+<section id="contact" class="contact-section">
+  <p class="section-label" data-uz="Jamoa" data-en="Team">Jamoa</p>
+  <h2 class="section-title" data-uz="Ishlab chiquvchilar" data-en="Developer Team">Ishlab chiquvchilar</h2>
+  <div class="team-card">
+    <div class="team-member">
+      <div class="avatar">AK</div>
+      <div>
+        <div class="member-name">Dr. Komiljonov Akrom</div>
+        <div class="member-info">komiljonovakrom9101@gmail.com</div>
+      </div>
+    </div>
+    <div class="team-member">
+      <div class="avatar">FQ</div>
+      <div>
+        <div class="member-name">Dr. Qadamboyev Farruh</div>
+        <div class="member-info">+998 93 212 23 08</div>
+      </div>
+    </div>
+    <div class="team-member">
+      <div class="avatar">UO</div>
+      <div>
+        <div class="member-name">O'tamurodov Ulug'bek</div>
+      </div>
+    </div>
+  </div>
+  <p class="contact-note"
+    data-uz="ECG Intelligence — ta'lim va ilmiy-tadqiqot maqsadida AI yordamida ritm aniqlash platformasi."
+    data-en="ECG Intelligence is an educational and research-focused ECG analysis platform using AI-assisted rhythm detection.">
+    ECG Intelligence — ta'lim va ilmiy-tadqiqot maqsadida AI yordamida ritm aniqlash platformasi.
+  </p>
+</section>
+
+<footer>ECG Intelligence © 2026 — Educational &amp; Research Platform</footer>
+
+<script>
+  const BACKEND = 'https://ecg-ai-1.onrender.com';
+  let currentLang = 'uz';
+
+  /* ── LANGUAGE ── */
+  function setLang(lang){
+    currentLang = lang;
+    document.documentElement.setAttribute('data-lang', lang);
+    document.querySelectorAll('.lang-btn').forEach(b=>{
+      b.classList.toggle('active', b.textContent.trim().toLowerCase()===lang);
+    });
+    document.querySelectorAll('[data-uz]').forEach(el=>{
+      const val = el.getAttribute('data-'+lang);
+      if(val !== null) el.innerHTML = val;
+    });
+  }
+
+  /* ── FILE HANDLING ── */
+  const fileInput   = document.getElementById('ecgFile');
+  const dropZone    = document.getElementById('dropZone');
+  const previewWrap = document.getElementById('preview-wrap');
+  const previewImg  = document.getElementById('preview-img');
+  const analyzeBtn  = document.getElementById('analyzeBtn');
+  const loadingBar  = document.getElementById('loadingBar');
+  const results     = document.getElementById('results');
+  let selectedFile  = null;
+
+  dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag-over');});
+  dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop',e=>{
+    e.preventDefault();dropZone.classList.remove('drag-over');
+    if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change',()=>{ if(fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+  function handleFile(file){
+    selectedFile=file;
+    const reader=new FileReader();
+    reader.onload=function(e){
+      previewImg.src=e.target.result;
+      previewWrap.style.display='block';
+    };
+    reader.readAsDataURL(file);
+    analyzeBtn.disabled=false;
+    results.style.display='none';
+    document.getElementById('errCard').style.display='none';
+  }
+
+  /* ── ANALYZE ── */
+  analyzeBtn.addEventListener('click', async()=>{
+    if(!selectedFile) return;
+    analyzeBtn.disabled=true;
+    loadingBar.style.display='block';
+    results.style.display='none';
+    document.getElementById('errCard').style.display='none';
+
+    const fd=new FormData();
+    fd.append('file',selectedFile);
+    try{
+      const res=await fetch(`${BACKEND}/analyze`,{method:'POST',body:fd});
+      if(!res.ok) throw new Error('Server error: '+res.status);
+      const data=await res.json();
+      showResults(data);
+    }catch(err){
+      const box=document.getElementById('errCard');
+      box.textContent='⚠ '+(err.message||'Serverga ulanishda xato.');
+      box.style.display='block';
+      results.style.display='block';
+    }finally{
+      loadingBar.style.display='none';
+      analyzeBtn.disabled=false;
+    }
+  });
+
+  /* ── CLASSIFICATION ── */
+  function classify(data){
+    const bpm = data.heart_rate??data.bpm??data.hr??data.heart_rate_bpm??null;
+    const raw = (data.rhythm??data.diagnosis??data.result??data.classification??'').toLowerCase();
+    const isSinus = raw.includes('sinus')||raw.includes('normal');
+    let type,label,desc,bpmCls,rhythmLabel;
+
+    const n=bpm!==null?Number(bpm):null;
+    if(n!==null&&!isNaN(n)){
+      if(n<60){
+        type='brady';bpmCls='blue';rhythmLabel=currentLang==='uz'?'Bradikardiya':'Bradycardia';
+        label='🐢 '+(currentLang==='uz'?'Bradikardiya':'Bradycardia');
+        desc=(currentLang==='uz'?`Yurak tezligi ${n} BPM — me'yordan past (< 60 BPM).`:`Heart rate ${n} BPM — below normal (< 60 BPM).`)+(isSinus?(currentLang==='uz'?' Sinus bradikardiyasi.':' Sinus bradycardia.'):'');
+      }else if(n>100){
+        type='tachy';bpmCls='red';rhythmLabel=currentLang==='uz'?'Taxikardiya':'Tachycardia';
+        label='⚡ '+(currentLang==='uz'?'Taxikardiya':'Tachycardia');
+        desc=(currentLang==='uz'?`Yurak tezligi ${n} BPM — me'yordan yuqori (> 100 BPM).`:`Heart rate ${n} BPM — above normal (> 100 BPM).`)+(isSinus?(currentLang==='uz'?' Sinus taxikardiyasi.':' Sinus tachycardia.'):'');
+      }else{
+        type='normal';bpmCls='green';rhythmLabel=currentLang==='uz'?'Sinus Ritm':'Sinus Rhythm';
+        label='✅ '+(currentLang==='uz'?'Sinus Ritm — Normal':'Sinus Rhythm — Normal');
+        desc=currentLang==='uz'?`Yurak tezligi ${n} BPM — me'yor doirasida (60–100 BPM). Sinus ritmi aniqlandi.`:`Heart rate ${n} BPM — within normal range (60–100 BPM). Sinus rhythm detected.`;
+      }
+    }else if(raw){
+      if(raw.includes('brady')){type='brady';bpmCls='blue';rhythmLabel='Bradycardia';label='🐢 Bradycardia';desc=currentLang==='uz'?"Yurak tezligi me'yordan past.":"Heart rate below normal.";}
+      else if(raw.includes('tachy')){type='tachy';bpmCls='red';rhythmLabel='Tachycardia';label='⚡ Tachycardia';desc=currentLang==='uz'?"Yurak tezligi me'yordan yuqori.":"Heart rate above normal.";}
+      else if(isSinus){type='normal';bpmCls='green';rhythmLabel=currentLang==='uz'?'Sinus Ritm':'Sinus Rhythm';label='✅ '+(currentLang==='uz'?'Sinus Ritm':'Sinus Rhythm');desc=currentLang==='uz'?"Me'yoriy sinus ritmi.":"Normal sinus rhythm.";}
+      else if(raw.includes('afib')||raw.includes('fibrillat')){type='warn';bpmCls='amber';rhythmLabel='AFib';label='⚠️ Aritmiya';desc=currentLang==='uz'?"Atrial fibrillatsiya aniqlandi. Shifokorga murojaat qiling.":"Atrial fibrillation detected. Consult a physician.";}
+      else{type='unknown';bpmCls='amber';rhythmLabel='—';label='🔍 '+(currentLang==='uz'?'Noaniq':'Unknown');desc=currentLang==='uz'?"Ritm aniqlanmadi.":"Rhythm could not be determined.";}
+    }else{
+      type='unknown';bpmCls='amber';rhythmLabel='—';
+      label='🔍 '+(currentLang==='uz'?'Noaniq':'Unknown');
+      desc=currentLang==='uz'?"Server yetarli ma'lumot bermadi.":"Insufficient data from server.";
+    }
+    return {bpm:n,type,label,desc,bpmCls,rhythmLabel,isSinus};
+  }
+
+  function showResults(data){
+    const {bpm,type,label,desc,bpmCls,rhythmLabel} = classify(data);
+
+    const card=document.getElementById('rhythmCard');
+    card.className='rhythm-card '+type;
+    document.getElementById('rcIcon').textContent=label.split(' ')[0];
+    document.getElementById('rcTitle').textContent=label.replace(/^\S+\s/,'');
+    document.getElementById('rcDesc').textContent=desc;
+    card.style.display='flex';
+
+    if(bpm!==null&&!isNaN(bpm)){
+      const sr=document.getElementById('statsRow');
+      sr.style.display='grid';
+      const bpmEl=document.getElementById('statBPM');
+      bpmEl.textContent=bpm+' BPM';
+      bpmEl.className='stat-val '+bpmCls;
+      const rEl=document.getElementById('statRhythm');
+      rEl.textContent=rhythmLabel;
+      rEl.className='stat-val '+bpmCls;
+    }
+
+    const lines=Object.entries(data).map(([k,v])=>`${k}: ${typeof v==='object'?JSON.stringify(v):v}`).join('\n');
+    if(lines){
+      const raw=document.getElementById('rawCard');
+      raw.innerHTML='<strong>// Server javobi</strong>\n\n'+lines;
+      raw.style.display='block';
+    }
+    results.style.display='block';
+  }
+</script>
+</body>
+</html>
