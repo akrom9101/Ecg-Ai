@@ -62,20 +62,20 @@ def _extract_trace_y(img):
     return ys
 
 
-def analyze_ecg_image(path_or_bytes):
-    img = _load_image(path_or_bytes)
+def _analyze_oriented(img):
+    """Run the full measurement pipeline assuming the trace runs
+    left-to-right in `img` as given (no rotation handling here)."""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     px_per_mm = _estimate_px_per_mm(gray)
 
     ys = _extract_trace_y(img)
     signal = -(ys - ys.mean())  # invert: image-y grows downward, R-wave = local min in y
 
-    # smooth a touch to reduce pixel jitter before peak picking
     k = max(3, int(px_per_mm // 3) | 1)
     kernel = np.ones(k) / k
     smooth = np.convolve(signal, kernel, mode="same")
 
-    min_distance_px = max(int(px_per_mm * 8), 10)   # refractory: no two beats closer than ~8mm (~300bpm cap)
+    min_distance_px = max(int(px_per_mm * 8), 10)
     prominence = (smooth.max() - smooth.min()) * 0.35
     peaks, props = find_peaks(smooth, distance=min_distance_px, prominence=prominence)
 
@@ -88,8 +88,12 @@ def analyze_ecg_image(path_or_bytes):
     bpm_series = 60.0 / rr_seconds
 
     bpm = float(np.median(bpm_series))
-    regularity_cv = float(np.std(rr_seconds) / np.mean(rr_seconds))  # coefficient of variation
+    regularity_cv = float(np.std(rr_seconds) / np.mean(rr_seconds))
     is_regular = regularity_cv < 0.10
+
+    # mean peak "sharpness" (prominence) as a rough confidence signal, used
+    # only to pick the best orientation when trying several rotations.
+    mean_prominence = float(np.mean(props["prominences"])) if len(props.get("prominences", [])) else 0.0
 
     return {
         "bpm": round(bpm, 1),
@@ -98,7 +102,34 @@ def analyze_ecg_image(path_or_bytes):
         "regularity_cv": round(regularity_cv, 3),
         "is_regular": bool(is_regular),
         "px_per_mm_estimated": round(float(px_per_mm), 2),
+        "_confidence": int(len(peaks)) * mean_prominence,
     }
+
+
+def analyze_ecg_image(path_or_bytes):
+    img = _load_image(path_or_bytes)
+
+    candidates = {
+        0: img,
+        90: cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE),
+        180: cv2.rotate(img, cv2.ROTATE_180),
+        270: cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE),
+    }
+
+    best_result, best_error = None, None
+    for angle, candidate_img in candidates.items():
+        try:
+            result = _analyze_oriented(candidate_img)
+            if best_result is None or result["_confidence"] > best_result["_confidence"]:
+                best_result = result
+        except ValueError as e:
+            best_error = e
+
+    if best_result is None:
+        raise best_error  # every orientation failed — surface the last reason
+
+    best_result.pop("_confidence", None)
+    return best_result
 
 
 if __name__ == "__main__":
