@@ -18,20 +18,24 @@ Env vars required (set these in Render -> your service -> Environment):
 import os
 import json
 import traceback
+from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from ecg_core import analyze_ecg_image
 
 import google.generativeai as genai
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/jpg"}
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 app = FastAPI(title="ECG Intelligence Backend")
+BASE_DIR = Path(__file__).resolve().parent
 
 # Allow your frontend (Netlify/Vercel/local file) to call this API.
 app.add_middleware(
@@ -42,14 +46,21 @@ app.add_middleware(
 )
 
 
-def interpret_with_gemini(image_bytes: bytes, measured: dict) -> dict:
+def _language_name(language: str) -> str:
+    return {"uz": "o'zbek", "en": "English", "ru": "русском"}.get(language, "o'zbek")
+
+
+def interpret_with_gemini(
+    image_bytes: bytes, measured: dict, language: str = "uz", mime_type: str = "image/jpeg"
+) -> dict:
     """Ask Gemini to interpret the ALREADY-MEASURED signal, not to remeasure it."""
     if not GEMINI_API_KEY:
         # No key configured yet -> fall back to a rule-based label so the
         # demo still works end-to-end while you're setting up the key.
-        return _rule_based_label(measured)
+        return _rule_based_label(measured, language)
 
     model = genai.GenerativeModel("gemini-2.5-flash")
+    response_language = _language_name(language)
     prompt = f"""Siz klinik yordamchi AI'siz. Quyida EKG rasmidan bizning signal-processing
 tizimimiz o'lchagan haqiqiy ma'lumotlar berilgan (siz bu raqamlarni QAYTA HISOBLAMANG,
 faqat sharhlang):
@@ -59,29 +70,56 @@ faqat sharhlang):
 - RR-interval muntazamligi (variatsiya koeffitsienti): {measured['regularity_cv']}
 - Ritm muntazammi: {"Ha" if measured['is_regular'] else "Yo'q, sezilarli o'zgaruvchan"}
 
-Rasmga ham qarab (grid qog'ozidagi P-QRS-T shakllarini tekshiring), FAQAT quyidagi JSON
-formatida javob bering, boshqa hech qanday matn qo'shmang:
+Rasm gridli ECG sifatida oldindan tasdiqlangan. Rasmga qarab P-QRS-T shakllarini
+tekshiring, lekin o'lchangan BPMni o'zgartirmang. Rasmda yetarli klinik belgi bo'lmasa
+ritmni "Noaniq" deb qaytaring; taxmin bilan aritmiya yozmang. Javobni {response_language}
+tilida bering. FAQAT quyidagi JSON formatida javob bering, boshqa matn qo'shmang:
 
 {{"rhythm": "<qisqa klinik nom, masalan: Sinus Ritm / Sinus Bradikardiyasi / Sinus Taxikardiyasi / Atrial Fibrillyatsiya shubhasi / Noaniq>",
-  "note": "<1-2 gapli qisqa klinik izoh, o'zbek tilida>",
+  "note": "<1-2 gapli qisqa klinik izoh, {response_language} tilida>",
   "confidence": "<past/o'rta/yuqori>"}}"""
 
     try:
         response = model.generate_content(
-            [prompt, {"mime_type": "image/jpeg", "data": image_bytes}],
+            [prompt, {"mime_type": mime_type, "data": image_bytes}],
             generation_config={"response_mime_type": "application/json"},
         )
-        parsed = json.loads(response.text)
-        return parsed
+        text = (response.text or "").strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        parsed = json.loads(text)
+        if not isinstance(parsed, dict):
+            raise ValueError("Gemini JSON javobi object emas")
+        return {
+            "rhythm": str(parsed.get("rhythm") or "Noaniq"),
+            "note": str(parsed.get("note") or ""),
+            "confidence": str(parsed.get("confidence") or "past"),
+        }
     except Exception:
         traceback.print_exc()
-        return _rule_based_label(measured)
+        return _rule_based_label(measured, language)
 
 
-def _rule_based_label(measured: dict) -> dict:
+def _rule_based_label(measured: dict, language: str = "uz") -> dict:
     """Zero-dependency fallback so the demo never hard-fails if the AI call
     errors out (rate limit, no key yet, network hiccup, etc.)."""
     bpm = measured["bpm"]
+    if language == "en":
+        if not measured["is_regular"]:
+            return {"rhythm": "Possible arrhythmia", "note": "RR intervals are significantly variable.", "confidence": "low"}
+        if bpm < 60:
+            return {"rhythm": "Sinus bradycardia", "note": f"Average {bpm} BPM, below normal.", "confidence": "medium"}
+        if bpm > 100:
+            return {"rhythm": "Sinus tachycardia", "note": f"Average {bpm} BPM, above normal.", "confidence": "medium"}
+        return {"rhythm": "Sinus rhythm", "note": f"Average {bpm} BPM, within normal range.", "confidence": "medium"}
+    if language == "ru":
+        if not measured["is_regular"]:
+            return {"rhythm": "Возможная аритмия", "note": "Интервалы RR заметно изменчивы.", "confidence": "низкая"}
+        if bpm < 60:
+            return {"rhythm": "Синусовая брадикардия", "note": f"Средняя частота {bpm} BPM, ниже нормы.", "confidence": "средняя"}
+        if bpm > 100:
+            return {"rhythm": "Синусовая тахикардия", "note": f"Средняя частота {bpm} BPM, выше нормы.", "confidence": "средняя"}
+        return {"rhythm": "Синусовый ритм", "note": f"Средняя частота {bpm} BPM, в пределах нормы.", "confidence": "средняя"}
     if not measured["is_regular"]:
         return {"rhythm": "Aritmiya shubhasi", "note": "RR-intervallar sezilarli o'zgaruvchan.", "confidence": "past"}
     if bpm < 60:
@@ -92,18 +130,44 @@ def _rule_based_label(measured: dict) -> dict:
 
 
 @app.post("/analyze")
-async def analyze(file: UploadFile = File(...)):
+async def analyze(file: UploadFile = File(...), language: str = Form("uz")):
+    language = language if language in {"uz", "en", "ru"} else "uz"
+    if file.content_type and file.content_type.lower() not in ALLOWED_IMAGE_TYPES:
+        return JSONResponse(
+            status_code=415,
+            content={
+                "error_code": "INVALID_FILE",
+                "error": "Faqat PNG, JPG yoki JPEG rasm qabul qilinadi.",
+            },
+        )
     image_bytes = await file.read()
+    if not image_bytes:
+        return JSONResponse(
+            status_code=422,
+            content={"error_code": "INVALID_FILE", "error": "Rasm fayli bo'sh."},
+        )
+    if len(image_bytes) > MAX_UPLOAD_BYTES:
+        return JSONResponse(
+            status_code=413,
+            content={"error_code": "FILE_TOO_LARGE", "error": "Rasm hajmi 10 MB dan oshmasligi kerak."},
+        )
 
     try:
         measured = analyze_ecg_image(image_bytes)
     except ValueError as e:
-        return JSONResponse(status_code=422, content={"error": str(e)})
+        return JSONResponse(
+            status_code=422,
+            content={"error_code": "NOT_ECG_IMAGE", "error": str(e)},
+        )
     except Exception:
         traceback.print_exc()
-        return JSONResponse(status_code=500, content={"error": "Rasmni tahlil qilishda kutilmagan xato."})
+        return JSONResponse(
+            status_code=500,
+            content={"error_code": "ANALYZE_FAILED", "error": "Rasmni tahlil qilishda kutilmagan xato."},
+        )
 
-    interpretation = interpret_with_gemini(image_bytes, measured)
+    mime_type = "image/png" if file.content_type == "image/png" else "image/jpeg"
+    interpretation = interpret_with_gemini(image_bytes, measured, language, mime_type)
 
     return {
         "heart_rate": measured["bpm"],
@@ -112,9 +176,15 @@ async def analyze(file: UploadFile = File(...)):
         "confidence": interpretation.get("confidence", ""),
         "regularity_cv": measured["regularity_cv"],
         "beats_detected": measured["n_beats_detected"],
+        "language": language,
     }
 
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
+async def web_app():
+    return FileResponse(BASE_DIR / "index.html", media_type="text/html")
+
+
+@app.get("/health")
 async def health():
     return {"status": "ok", "service": "ECG Intelligence backend"}

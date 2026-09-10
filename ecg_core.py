@@ -17,7 +17,77 @@ def _load_image(path_or_bytes):
         img = cv2.imread(path_or_bytes, cv2.IMREAD_COLOR)
     if img is None:
         raise ValueError("Rasmni o'qib bo'lmadi (unsupported/corrupt image)")
+    h, w = img.shape[:2]
+    if h < 240 or w < 240:
+        raise ValueError("ECG rasmi juda kichik — kamida 240×240 px rasm yuboring")
+    if h * w > 30_000_000:
+        scale = (30_000_000 / float(h * w)) ** 0.5
+        img = cv2.resize(img, (max(240, int(w * scale)), max(240, int(h * scale))), interpolation=cv2.INTER_AREA)
     return img
+
+
+def _periodicity(profile, min_lag=3, max_lag=60):
+    """Return the strongest normalized repeating pattern in a 1-D profile."""
+    profile = np.asarray(profile, dtype=np.float32)
+    if profile.size < 20:
+        return 0.0
+    # Keep autocorrelation bounded for phone photos with very large dimensions.
+    stride = max(1, int(profile.size / 1800))
+    profile = profile[::stride]
+    profile = profile - np.median(profile)
+    energy = float(np.dot(profile, profile))
+    if energy <= 1e-6:
+        return 0.0
+    ac = np.correlate(profile, profile, mode="full")[len(profile) - 1:] / energy
+    lo = min_lag
+    hi = min(max_lag, len(ac) - 1)
+    return float(np.max(ac[lo:hi + 1])) if hi >= lo else 0.0
+
+
+def _validate_ecg_layout(img):
+    """Reject ordinary photos before signal extraction.
+
+    The previous pipeline only needed two dark peaks. A portrait, document, or
+    random dark object can satisfy that condition. Paper ECGs supported by this
+    project have a repeated red/pink millimetre grid plus a dark trace, so both
+    characteristics are required here.
+    """
+    b, g, r = [channel.astype(np.int16) for channel in cv2.split(img)]
+    redness = r - ((g + b) / 2.0)
+    # ECG paper grid is commonly red/pink. The saturation floor prevents
+    # neutral grey backgrounds from being treated as grid lines.
+    grid_mask = (r > 95) & (redness > 9) & (r > g + 5)
+    grid_fraction = float(grid_mask.mean())
+    if grid_fraction < 0.0015:
+        raise ValueError(
+            "ECG rasmi tasdiqlanmadi — qizil/pushti grid topilmadi. "
+            "Faqat gridli EKG rasmini yuboring."
+        )
+
+    col_profile = grid_mask.mean(axis=0)
+    row_profile = grid_mask.mean(axis=1)
+    periodicity = max(_periodicity(col_profile), _periodicity(row_profile))
+    line_strength = max(float(col_profile.max()), float(row_profile.max()))
+    if periodicity < 0.08 and line_strength < 0.06:
+        raise ValueError(
+            "ECG rasmi tasdiqlanmadi — muntazam EKG grid chiziqlari topilmadi. "
+            "Oddiy rasm yoki grid ko'rinmaydigan surat qabul qilinmaydi."
+        )
+
+    # Require dark, mostly-neutral ink across a meaningful portion of columns.
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    dark_neutral = (gray < 145) & (np.abs(r - g) < 34) & (np.abs(g - b) < 34)
+    trace_columns = float(dark_neutral.any(axis=0).mean())
+    if trace_columns < 0.22:
+        raise ValueError(
+            "ECG chizig'i yetarli ko'rinmadi — rasmni tekisroq va yorug'roq oling."
+        )
+
+    return {
+        "grid_fraction": round(grid_fraction, 4),
+        "grid_periodicity": round(periodicity, 3),
+        "trace_columns": round(trace_columns, 3),
+    }
 
 
 def _estimate_px_per_mm(gray):
@@ -79,8 +149,8 @@ def _analyze_oriented(img):
     prominence = (smooth.max() - smooth.min()) * 0.35
     peaks, props = find_peaks(smooth, distance=min_distance_px, prominence=prominence)
 
-    if len(peaks) < 2:
-        raise ValueError("Yetarli R-peak topilmadi — rasmda kamida 2-3 to'liq yurak sikli bo'lishi kerak")
+    if len(peaks) < 3:
+        raise ValueError("Yetarli R-peak topilmadi — rasmda kamida 3 ta to'liq yurak sikli bo'lishi kerak")
 
     rr_px = np.diff(peaks).astype(float)
     paper_speed_mm_s = 25.0
@@ -88,6 +158,10 @@ def _analyze_oriented(img):
     bpm_series = 60.0 / rr_seconds
 
     bpm = float(np.median(bpm_series))
+    if bpm < 30 or bpm > 220:
+        raise ValueError(
+            f"Yurak tezligi ishonchli diapazonda aniqlanmadi ({bpm:.1f} BPM)"
+        )
     regularity_cv = float(np.std(rr_seconds) / np.mean(rr_seconds))
     is_regular = regularity_cv < 0.10
 
@@ -108,6 +182,7 @@ def _analyze_oriented(img):
 
 def analyze_ecg_image(path_or_bytes):
     img = _load_image(path_or_bytes)
+    _validate_ecg_layout(img)
 
     candidates = {
         0: img,

@@ -1,39 +1,43 @@
-# ECG Intelligence — Backend (hybrid: DSP + Gemini)
+# ECG Intelligence
 
-## Fayllar
-- `ecg_core.py` — haqiqiy signal-processing (OpenCV + scipy). Rasmdan EKG chizig'ini
-  ajratadi, R-peaklarni topadi, BPM va ritm muntazamligini matematik hisoblaydi.
-  Hech qanday AI API'ga bog'liq emas.
-- `main.py` — FastAPI ilova. `/analyze` endpoint: rasmni qabul qiladi → `ecg_core`
-  bilan o'lchaydi → Gemini'ga (faqat interpretatsiya uchun) yuboradi → JSON qaytaradi.
-- `requirements.txt` — kerakli kutubxonalar.
+FastAPI web application for analyzing grid-based ECG images. The
+signal-processing layer measures BPM and rhythm regularity; Gemini optionally
+provides a short interpretation. If `GEMINI_API_KEY` is absent, the backend
+uses a rule-based fallback.
 
-## 1. Gemini API key olish (bepul)
-1. https://aistudio.google.com/apikey ga kiring (Google akkaunt bilan)
-2. "Create API key" bosing, kalitni nusxalang
+## Run locally
 
-## 2. Render'da sozlash (mavjud ecg-ai-1.onrender.com xizmatingizga)
-1. Bu 3 faylni GitHub repo'ingizga qo'shing (backend papkasiga)
-2. Render dashboard → sizning service → **Environment** → yangi env var qo'shing:
-   - Key: `GEMINI_API_KEY`
-   - Value: (1-qadamda olgan kalit)
-3. Render → **Settings** → Start Command:
-   ```
-   uvicorn main:app --host 0.0.0.0 --port $PORT
-   ```
-4. Deploy qiling (Render avtomatik push'dan keyin qayta deploy qiladi)
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+export GEMINI_API_KEY="your-key"  # optional
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
 
-## 3. Tekshirish
-Brauzerda `https://ecg-ai-1.onrender.com/` ochib `{"status":"ok",...}` ko'rinishini tekshiring.
-Keyin frontend orqali (yoki curl bilan) haqiqiy rasm yuklab `/analyze`ni sinab ko'ring.
+Open the interface at `http://localhost:8000/`.
 
-## Muhim: rasm talablari
-Bu DSP pipeline **grid qog'ozli** EKG rasmlari uchun ishlaydi (fon to'r chiziqlari qizil/
-pushti, chiziq qora/quyuq bo'lishi kerak). Juda xira, qiya burchakdan olingan yoki
-to'r ko'rinmaydigan rasmlar uchun aniqlik pasayishi mumkin — demo uchun frontal, yorug'
-rasmlardan foydalaning.
+Health check: `GET http://localhost:8000/health`
 
-## Agar Gemini xato bersa / kalit hali yo'q bo'lsa
-`main.py` ichida oddiy qoidaga asoslangan fallback bor (`_rule_based_label`) — kalit
-qo'yilmagan bo'lsa ham `/analyze` ishlayveradi, faqat "rhythm" izohi soddaroq bo'ladi.
-Bu demo hech qachon to'liq to'xtab qolmasligini ta'minlaydi.
+ECG analysis: `POST http://localhost:8000/analyze` with a multipart image field
+named `file` and an optional `language` field (`uz`, `en`, or `ru`).
+
+The web interface is served by the same backend at
+`http://localhost:8000/`. Do not open `index.html` with a file browser unless
+the backend is already running; serving it through FastAPI avoids browser
+CORS and relative-URL issues.
+
+## Deploy on Render
+
+Create a **Web Service** from this GitHub repository:
+
+- **Runtime:** Python
+- **Build command:** `pip install -r requirements.txt`
+- **Start command:** `uvicorn main:app --host 0.0.0.0 --port $PORT`
+- **Environment variable:** `GEMINI_API_KEY` (optional; add it in Render Environment)
+
+After deployment, open the Render URL. The frontend and `/analyze` API are
+served from the same URL.
+
+This service is an analysis aid, not a medical diagnosis. Confirm results with
+a qualified clinician.
