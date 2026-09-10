@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Uploaded source copies and the local organized duplicate
+attached_assets/
+ecg_backend/
+
+# Local secrets
+.env
