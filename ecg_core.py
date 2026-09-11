@@ -55,10 +55,11 @@ def _validate_ecg_layout(img):
     b, g, r = [channel.astype(np.int16) for channel in cv2.split(img)]
     redness = r - ((g + b) / 2.0)
     # ECG paper grid is commonly red/pink. The saturation floor prevents
-    # neutral grey backgrounds from being treated as grid lines.
-    grid_mask = (r > 95) & (redness > 9) & (r > g + 5)
+    # neutral grey backgrounds — and warm-toned ordinary photos (skin, wood,
+    # sunsets) — from being treated as grid lines.
+    grid_mask = (r > 100) & (redness > 18) & (r > g + 12)
     grid_fraction = float(grid_mask.mean())
-    if grid_fraction < 0.0015:
+    if grid_fraction < 0.02:
         raise ValueError(
             "ECG rasmi tasdiqlanmadi — qizil/pushti grid topilmadi. "
             "Faqat gridli EKG rasmini yuboring."
@@ -68,17 +69,21 @@ def _validate_ecg_layout(img):
     row_profile = grid_mask.mean(axis=1)
     periodicity = max(_periodicity(col_profile), _periodicity(row_profile))
     line_strength = max(float(col_profile.max()), float(row_profile.max()))
-    if periodicity < 0.08 and line_strength < 0.06:
+    # Both signals must independently look like a printed grid now — a random
+    # repeating texture (fabric, tiles, blinds) rarely satisfies both at once.
+    if periodicity < 0.15 or line_strength < 0.12:
         raise ValueError(
             "ECG rasmi tasdiqlanmadi — muntazam EKG grid chiziqlari topilmadi. "
             "Oddiy rasm yoki grid ko'rinmaydigan surat qabul qilinmaydi."
         )
 
-    # Require dark, mostly-neutral ink across a meaningful portion of columns.
+    # Require dark, mostly-neutral ink running across MOST of the width —
+    # a real ECG trace spans the whole strip; scattered shadows/hair/objects
+    # in an ordinary photo only cover a patch of columns.
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     dark_neutral = (gray < 145) & (np.abs(r - g) < 34) & (np.abs(g - b) < 34)
     trace_columns = float(dark_neutral.any(axis=0).mean())
-    if trace_columns < 0.22:
+    if trace_columns < 0.55:
         raise ValueError(
             "ECG chizig'i yetarli ko'rinmadi — rasmni tekisroq va yorug'roq oling."
         )

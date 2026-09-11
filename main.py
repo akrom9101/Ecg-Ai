@@ -70,12 +70,18 @@ faqat sharhlang):
 - RR-interval muntazamligi (variatsiya koeffitsienti): {measured['regularity_cv']}
 - Ritm muntazammi: {"Ha" if measured['is_regular'] else "Yo'q, sezilarli o'zgaruvchan"}
 
-Rasm gridli ECG sifatida oldindan tasdiqlangan. Rasmga qarab P-QRS-T shakllarini
-tekshiring, lekin o'lchangan BPMni o'zgartirmang. Rasmda yetarli klinik belgi bo'lmasa
-ritmni "Noaniq" deb qaytaring; taxmin bilan aritmiya yozmang. Javobni {response_language}
-tilida bering. FAQAT quyidagi JSON formatida javob bering, boshqa matn qo'shmang:
+Avval rasmning o'zi HAQIQIY qog'ozga bosilgan yoki ekrandagi EKG/kardiogramma
+strip'i ekanligini tasdiqlang (P-QRS-T shakllari, millimetrli grid ko'rinishi kerak).
+Agar rasm EKG bo'lmasa (odam surati, hujjat, tabiat, tasodifiy fon va h.k.), "is_valid_ecg"
+maydonini false qiling va boshqa maydonlarni bo'sh/"Noaniq" qoldiring.
 
-{{"rhythm": "<qisqa klinik nom, masalan: Sinus Ritm / Sinus Bradikardiyasi / Sinus Taxikardiyasi / Atrial Fibrillyatsiya shubhasi / Noaniq>",
+Agar rasm haqiqatan ham EKG bo'lsa, P-QRS-T shakllarini tekshiring, lekin
+o'lchangan BPMni o'zgartirmang. Rasmda yetarli klinik belgi bo'lmasa ritmni "Noaniq"
+deb qaytaring; taxmin bilan aritmiya yozmang. Javobni {response_language} tilida bering.
+FAQAT quyidagi JSON formatida javob bering, boshqa matn qo'shmang:
+
+{{"is_valid_ecg": <true yoki false>,
+  "rhythm": "<qisqa klinik nom, masalan: Sinus Ritm / Sinus Bradikardiyasi / Sinus Taxikardiyasi / Atrial Fibrillyatsiya shubhasi / Noaniq>",
   "note": "<1-2 gapli qisqa klinik izoh, {response_language} tilida>",
   "confidence": "<past/o'rta/yuqori>"}}"""
 
@@ -91,13 +97,16 @@ tilida bering. FAQAT quyidagi JSON formatida javob bering, boshqa matn qo'shmang
         if not isinstance(parsed, dict):
             raise ValueError("Gemini JSON javobi object emas")
         return {
+            "is_valid_ecg": bool(parsed.get("is_valid_ecg", True)),
             "rhythm": str(parsed.get("rhythm") or "Noaniq"),
             "note": str(parsed.get("note") or ""),
             "confidence": str(parsed.get("confidence") or "past"),
         }
     except Exception:
         traceback.print_exc()
-        return _rule_based_label(measured, language)
+        fallback = _rule_based_label(measured, language)
+        fallback["is_valid_ecg"] = True  # Gemini unavailable — DSP grid-check already passed
+        return fallback
 
 
 def _rule_based_label(measured: dict, language: str = "uz") -> dict:
@@ -168,6 +177,15 @@ async def analyze(file: UploadFile = File(...), language: str = Form("uz")):
 
     mime_type = "image/png" if file.content_type == "image/png" else "image/jpeg"
     interpretation = interpret_with_gemini(image_bytes, measured, language, mime_type)
+
+    if not interpretation.get("is_valid_ecg", True):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error_code": "NOT_ECG_IMAGE",
+                "error": "Bu rasm EKG/kardiogramma emas — iltimos, gridli EKG strip rasmini yuboring.",
+            },
+        )
 
     return {
         "heart_rate": measured["bpm"],
